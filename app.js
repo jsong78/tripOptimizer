@@ -64,10 +64,11 @@ app.get('/mostVisited', function(req,res){
       for(var i=0; i<results.length; i++){
         reslist.push(results[i].tid);
       }
-      reslist = reslist.join("','");
+      reslist_ = reslist.join("','");
+      console.log(reslist);
       if(reslist.length>1){
-
-        connection.query("SELECT DISTINCT(name) FROM Contain, Place WHERE Contain.tid IN ('"+reslist+"') ORDER BY COUNT(Place.pid) DESC",function(err,results,fields){
+        console.log('lenth>1');
+        connection.query("SELECT Place.* FROM Contain INNER JOIN Place ON Contain.pid = Place.pid WHERE Contain.tid IN ('"+reslist_+"') GROUP BY Place.pid ORDER BY COUNT(Place.pid) DESC LIMIT 10",function(err,results,fields){
           if(err) throw err;
           else{
             res.status(200).json(
@@ -77,7 +78,8 @@ app.get('/mostVisited', function(req,res){
         });
       }
       else if(reslist.length===1){
-        onnection.query("SELECT DISTINCT(name) FROM Contain, Place WHERE Contain.tid='"+reslist[0]+"' ORDER BY COUNT(Place.pid) DESC",function(err,results,fields){
+        console.log('lenth==1');
+        connection.query("SELECT Place.* FROM Contain INNER JOIN Place ON Contain.pid = Place.pid WHERE Contain.tid='"+reslist[0]+"' GROUP BY Place.pid ORDER BY COUNT(Place.pid) DESC LIMIT 10",function(err,results,fields){
           if(err) throw err;
           else{
             res.status(200).json(
@@ -97,7 +99,6 @@ app.get('/place/categorize', function(req,res){
   if(req.query.city!=undefined)
     q_city = " WHERE city LIKE '%"+req.query.city+"%' "
   var query = "SELECT category, COUNT(*) FROM Place"+q_city+"GROUP BY category";
-  console.log(query);
   connection.query(query, function(err,results,fields){
     if(err) throw err;
     if(results.length===0){
