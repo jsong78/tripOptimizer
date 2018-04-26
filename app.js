@@ -4,7 +4,15 @@ var mysql = require('mysql');
 var bodyParser = require('body-parser');
 const uuidv4 = require('uuid/v4');
 var pythonShell = require('python-shell');
+var AWS = require('aws-sdk');
+AWS.config.update({accessKeyId: 'AKIAJBIRLZWZ5Y7PCZ7A', secretAccessKey: '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'});
 app.use(bodyParser.json());
+
+var lambda = new AWS.Lambda({
+  region: "us-east-2"
+});
+
+
 
 var connection = mysql.createConnection({
   host: 'cs411-tripoptimizer.c3jbpbfvqkol.us-east-2.rds.amazonaws.com',
@@ -44,7 +52,7 @@ function parseDate(dob){
 app.get('/mostVisited', function(req,res){
   var q_age = req.query.age;
   var q_city = req.query.city;
-  connection.query("SELECT tid FROM User, Trip WHERE User.email = Trip.email AND User.age="+q_age+" AND Trip.city='"+q_city+"'",function(err,results,fields){
+  connection.query("SELECT tid FROM User, Trip WHERE User.email = Trip.email AND User.age BETWEEN '"+parseInt(q_age-5)+"' AND '"+parseInt(q_age+5)+"' AND Trip.city='"+q_city+"'", function(err,results,fields){
     if(err) throw err;
     if(results.length===0){
       res.status(404).json({
@@ -57,7 +65,6 @@ app.get('/mostVisited', function(req,res){
         reslist.push(results[i].tid);
       }
       reslist = reslist.join("','");
-
       if(reslist.length>1){
 
         connection.query("SELECT DISTINCT(name) FROM Contain, Place WHERE Contain.tid IN ('"+reslist+"') ORDER BY COUNT(Place.pid) DESC",function(err,results,fields){
@@ -67,7 +74,6 @@ app.get('/mostVisited', function(req,res){
                 results
             );
           }
-
         });
       }
       else if(reslist.length===1){
@@ -78,7 +84,6 @@ app.get('/mostVisited', function(req,res){
                 results
             );
           }
-
         });
       }
     }
@@ -130,7 +135,6 @@ app.get('/place', function(req,res){
       query = query+"category LIKE '%"+req.query.category+"%'";
     }
   }
-  console.log(query);
   connection.query(query, function(err,results,fields){
     if(err) throw err;
     if(results.length===0){
@@ -379,7 +383,7 @@ app.put('/user/:uid/trip/:tid', function(req,res){
     tripdata.endDate = results[0].endDate;
   }
     connection.query("UPDATE Trip SET itinerary = ?, latitude = ?, longitude = ?, startLocation = ?, startDate = ?, endDate = ? WHERE tid = '"+tid+"' AND email = '"+uid+"' " ,
-      [tripdata.itinerary, tripdata.latitude, tripdata.longitude, ripdata.startLocation, tripdata.startDate, tripdata.endDate],function(err,rows,fields){
+      [tripdata.itinerary, tripdata.latitude, tripdata.longitude, tripdata.startLocation, tripdata.startDate, tripdata.endDate],function(err,rows,fields){
       if(err){
           res.status(500).json({
           "message": "Internal Error"
@@ -393,6 +397,8 @@ app.put('/user/:uid/trip/:tid', function(req,res){
     });
   });
 });
+
+
 
 app.delete('/user/:id',function(req,res){
   var uid = req.params.id;
@@ -411,109 +417,6 @@ app.delete('/user/:id',function(req,res){
   });
 });
 
-// 4/23/18
-// app.post('/trip/:tid/place/:pid', function(req,res){
-//   connection.query("INSERT INTO Contain VALUES (?,?,?)",
-//     [req.params.tid,req.params.pid,0],function(err,results,fields){
-//     if(err){
-//       if (err.code == 'ER_DUP_ENTRY'){
-//         res.status(409).json({
-//           "message": "duplicate entry"
-//         });
-//       }
-//       else{
-//         res.status(500).json({
-//           "message": "Internal Error"
-//         });
-//       }
-//     }
-//     else{
-//       res.status(201).json({
-//       });
-//     }
-//   });
-// });
-
-
-app.post('/trip/:tid/place/:pid', function(req,res){
-
-  connection.query("SELECT pid FROM Contain WHERE tid='"+req.params.tid+"'",function(err,results,fields){
-    if(err) throw err;
-      console.log(results);
-      results.push({pid:parseInt(req.params.pid)});
-      console.log(results);
-      runSQL2(results,function(datalist){
-        if(results.length === datalist.length){
-
-          getStartLoc(req.params.tid, function(startLoc){
-
-            var lat = [startLoc.latitude];
-            var long = [startLoc.longitude];
-            var pidx = [-1];
-            var cat = [0];
-            for(var i=0; i<datalist.length; i++){
-              lat.push(datalist[i].latitude);
-              long.push(datalist[i].longitude);
-              pidx.push(datalist[i].pid);
-              if(datalist[i].category=="Restaurants")
-                cat.push(1);
-              else
-                cat.push(0);
-            }
-
-            var orderlist = [];
-            for(var i=0; i<results.length; i++){
-                orderlist.push(results[i].pid);
-            }
-            // console.log([[startLoc.latitude, startLoc.longitude],lat,long,pidx,cat]);
-            var pyshell = new pythonShell('TspAlgo.py', {pythonPath : "python3", mode: 'text', 
-              args: [[startLoc.latitude, startLoc.longitude],lat,long,pidx,cat]
-            });
-            pyshell.on('message', function (pythonres) {
-              console.log(pythonres)
-              var orderlist = [];
-              for(var a=0;a<pythonres.length;a++){
-                if(pythonres[a]!=-1)
-                  orderlist.push(pythonres[a]);
-              }
-            //   console.log("post pid:");
-            //   console.log(req.params.pid);
-              for(var i=0; i<orderlist.length; i++){
-                  let curpid = orderlist[i];
-                  if(curpid!=req.params.pid){
-                    connection.query("UPDATE Contain SET ord = ? WHERE tid = '"+req.params.tid+"' AND pid = '"+curpid+"' " ,[i],function(err,rows,fields){
-                      
-                    });
-                  }
-                  else{
-                    connection.query("INSERT INTO Contain VALUES (?,?,?)",
-                      [req.params.tid,req.params.pid,i],function(err,results,fields){
-                      if(err){
-                      if (err.code == 'ER_DUP_ENTRY'){
-                        res.status(409).json(
-                        );
-                      }
-                      else{
-                        res.status(500).json({
-                          "message": "Internal Error"
-                        });
-                      }
-                    }
-                    else{
-                      res.status(201).json(
-                      );
-                    }
-                    });
-                  }
-                }
-            });
-          });
-        }
-      });
-    // }
-  });
-});
-
 // returns lat,long
 function getStartLoc(tid, callback){
       connection.query("SELECT latitude,longitude FROM Trip WHERE tid='"+tid+"'",function(err,results,fields){
@@ -524,8 +427,7 @@ function getStartLoc(tid, callback){
       });
   }
 
-
-
+// gets (pid,lat,long,cat) from Place with pid
 function runSQL2(pids, callback){
     var placeDataList = [];
     for(var i=0; i<pids.length; i++){
@@ -540,6 +442,7 @@ function runSQL2(pids, callback){
     }
 }
 
+//gets all place with pid
 function runSQL(pids, callback){
     var placeDataList = [];
     for(var i=0; i<pids.length; i++){
@@ -555,11 +458,27 @@ function runSQL(pids, callback){
     }
 }
 
+// functions the same as runSQL
+function runSQL3(pids, callback){
+    var placeDataList = [];
+    for(var i=0; i<pids.length; i++){
+        let curpid = pids[i];
+      connection.query("SELECT * FROM Place WHERE pid='"+curpid+"'",function(err,results,fields){
+        if(err) throw err;
+        
+        else{
+          placeDataList.push(results[0]);
+          callback(placeDataList);
+        }
+      });
+    }
+}
+
 
 // 4/23/18 
 // sort and get all list of place with tid=:tid, in order
 app.get('/trip/:tid/place', function(req,res){
-  connection.query("SELECT pid FROM Contain WHERE tid='"+req.params.tid+"' ORDER BY ord ASC",function(err,results,fields){
+  connection.query("SELECT pid FROM Contain WHERE tid='"+req.params.tid+"'",function(err,results,fields){
     if(err) throw err;
     if(results.length===0){
       res.status(404).json({
@@ -578,7 +497,92 @@ app.get('/trip/:tid/place', function(req,res){
   });
 });
 
+app.delete('/trip/:tid/place/:pid', function(req,res){
+  connection.query("DELETE FROM Contain WHERE tid='"+req.params.tid+"' AND pid="+req.params.pid+"",function(err,results,fields){
+    if(err) throw err;
+    if(results.affectedRows===0){
+      res.status(404).json({
+        message: "Not Found"
+      });
+    }
+    else{
+      res.status(200).json({
 
+      });
+    }
+  });
+});
+
+app.post('/trip/:tid/place/:pid',function(req,res){
+  connection.query("INSERT INTO Contain VALUES (?,?,?)",
+    [req.params.tid,req.params.pid,0],function(err,results,fields){
+      if(err){
+        if (err.code == 'ER_DUP_ENTRY'){
+          res.status(409).json({
+            "message": "Duplicate Entry"
+          });
+        }
+        else{
+          res.status(500).json({
+            "message": "Internal Error"
+          });
+        }
+      }
+      else{
+        res.status(201).json({});
+      }
+  });
+});
+
+app.get('/trip/:tid/place/itinerary',function(req,res){
+  connection.query("SELECT pid FROM Contain WHERE tid='"+req.params.tid+"'", function(err,results,fields){
+    if(err) throw err;
+    else{
+      runSQL2(results,function(datalist){
+        if(results.length === datalist.length){
+          getStartLoc(req.params.tid, function(startLoc){
+            var lat = [startLoc.latitude];
+            var long = [startLoc.longitude];
+            var pidx = [-1];
+            var cat = [0];
+            for(var i=0; i<datalist.length; i++){
+              lat.push(datalist[i].latitude);
+              long.push(datalist[i].longitude);
+              pidx.push(datalist[i].pid);
+              if(datalist[i].category=="Restaurants")
+                cat.push(1);
+              else
+                cat.push(0);
+            }
+            var params = {
+              FunctionName: 'tsplambda', /* required */
+              InvocationType: "RequestResponse",
+              Payload: JSON.stringify({
+                args: [[startLoc.latitude, startLoc.longitude],lat,long,pidx,cat]
+              })
+            };
+            console.log(params);
+            var orderlist = [];
+            lambda.invoke(params, function(err, data) {
+                if (err) console.log(err, err.stack);
+                else{
+                  console.log(orderlist);
+                  orderlist = JSON.parse(data.Payload).ret;
+                  runSQL3(orderlist,function(datalist){
+                    if(orderlist.length === datalist.length){
+                      res.status(200).json(
+                        datalist
+                      );
+                    }
+                  });
+                }
+            });
+          });
+        }
+      });
+    }
+  });
+});
 
 
 

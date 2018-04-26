@@ -4,6 +4,7 @@
   "description": "tripOptimizer",
   "main": "index.js",
   "dependencies": {
+    "aws-sdk": "^2.229.1",
     "aws-serverless-express": "^3.1.3",
     "body-parser": "^1.18.2",
     "express": "^4.16.3",
